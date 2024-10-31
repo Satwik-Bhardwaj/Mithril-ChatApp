@@ -5,14 +5,10 @@ import com.userservice.Repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-
 @Service
 public class UserService {
-
     @Autowired
     private UserRepository userRepository;
-
-
     public ResponseEntity<?> create(Users users){
         Users usersSaved = userRepository.save(users);
         return ResponseEntity.ok(usersSaved);
@@ -30,7 +26,6 @@ public class UserService {
        userRepository.delete(users);
        return ResponseEntity.noContent().build();}
         return ResponseEntity.notFound().build();
-
     }
 
 
