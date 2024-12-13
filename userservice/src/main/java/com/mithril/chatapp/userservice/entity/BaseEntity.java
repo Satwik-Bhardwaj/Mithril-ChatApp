@@ -21,7 +21,7 @@ public class BaseEntity  {
     private UUID id;
 
     @CreatedDate
-    @Column(updatable = false,unique = false)
+    @Column(updatable = false)
      private LocalDateTime createdAt;
 
     @LastModifiedDate
