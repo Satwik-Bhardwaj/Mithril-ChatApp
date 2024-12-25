@@ -1,5 +1,8 @@
 package com.mithril.chatapp.userservice.enums;
 
+import lombok.Getter;
+
+@Getter
 public enum CountryCode {
     US("+1"),
     IN("+91"),
@@ -11,7 +14,4 @@ public enum CountryCode {
         this.code = code;
     }
 
-    public String getCode() {
-        return code;
-    }
 }
