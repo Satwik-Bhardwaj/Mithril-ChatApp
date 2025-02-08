@@ -2,10 +2,15 @@ package com.mithril.chatapp.chatservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mithril.chatapp.chatservice.dto.Message;
+import com.mithril.chatapp.chatservice.dto.WebSocketSessionInfo;
+import com.mithril.chatapp.chatservice.redis.Publisher;
+import com.mithril.chatapp.chatservice.redis.Subscriber;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -15,61 +20,69 @@ import java.util.concurrent.ScheduledExecutorService;
 @Component
 public class CustomWebSocketHandler implements WebSocketHandler {
 
+    @Autowired
+    private WebSocketSessionManager webSocketSessionManager;
+
+    @Autowired
+    private Publisher redisPublisher;
+
+    @Autowired
+    private Subscriber redisSubscriber;
+
     // To map the JSON object to a Java object
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // To store active sessions
-    private final ConcurrentHashMap<WebSocketSession, Long> activeSessions = new ConcurrentHashMap<>();
     // To schedule a task to check for inactive sessions
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-    public CustomWebSocketHandler() {
+    public CustomWebSocketHandler(WebSocketSessionManager webSocketSessionManager, Publisher redisPublisher, Subscriber redisSubscriber) {
+        // Initialize the WebSocketSessionManager, Publisher, and Subscriber
+        this.webSocketSessionManager = webSocketSessionManager;
+        this.redisPublisher = redisPublisher;
+        this.redisSubscriber = redisSubscriber;
+
+
         // Schedule a task to check for inactive sessions every 10 seconds
-        scheduler.scheduleAtFixedRate(() -> {
-            activeSessions.forEach((session, lastPing) -> {
-                if (System.currentTimeMillis() - lastPing > 15000) {   // Close the session if inactive for more than 10 seconds
-                    try {
-                        session.close(CloseStatus.GOING_AWAY);
-                        activeSessions.remove(session);
-                    } catch (Exception e) {
-                        log.error("Error occurred while closing session: {}", session.getId(), e);
-                    }
-                } else {    // Send ping to the session if active
-                    try {
-                        Message ping = new Message("PING", null, System.currentTimeMillis(), "server", session.getId());
-                        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(ping)));
-                    } catch (Exception e) {
-                        log.error("Error occurred while sending ping to session: {}", session.getId(), e);
-                    }
-                }
-            });
-        }, 0, 10000, java.util.concurrent.TimeUnit.MILLISECONDS);
+//        scheduler.scheduleAtFixedRate(() -> {
+//                try {
+//                    activeSessions.forEach((sessionId, sessionInfo) -> {
+//                        if (System.currentTimeMillis() - sessionInfo.getLastPing() > 15000) {   // Close the session if inactive for more than 15 seconds
+//                            activeSessions.remove(sessionId);
+//                            log.info("Session {} is inactive for more than 15 seconds. Closing the session.", sessionId);
+//                        }
+//                    });
+//                } catch (Exception e) {
+//                    log.error("Error occurred during session cleanup task", e);
+//                }
+//        }, 0, 10000, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        String uid = extractUidFromUri(Objects.requireNonNull(session.getUri()).toString());
-        activeSessions.put(session, System.currentTimeMillis());
-        log.info("New connection established: {} with uid: {}", session.getId(), uid);
+        this.webSocketSessionManager.addWebSocketSession(session);
+        String userId = WebSocketHelper.getUserIdFromSessionAttribute(session);
+        this.redisSubscriber.subscribe(userId);
+
+//        String uid = extractUidFromUri(Objects.requireNonNull(session.getUri()).toString());
+//        activeSessions.put(session.getId(), new WebSocketSessionInfo(session, System.currentTimeMillis()));
+        log.info("New connection established: {} with userId: {}", session.getId(), userId);
     }
 
     @Override
     public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) throws Exception {
         String payload = message.getPayload().toString();
-
         Message customMessage = objectMapper.readValue(payload, Message.class);
 
-        if ("PONG".equals(customMessage.getType())) {
-            activeSessions.put(session, System.currentTimeMillis());
+        if ("PING".equals(customMessage.getType())) {
+            // sending pong
+            session.sendMessage(new TextMessage("{\"type\":\"PONG\"}"));
         } else {
             log.info("Received message: {} from session: {}", customMessage, session.getId());
-            // Broadcast the message to all active sessions
-            activeSessions.forEach((activeSession, lastPing) -> {
-                try {
-                    activeSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(customMessage)));
-                } catch (Exception e) {
-                    log.error("Error occurred while sending message to session: {}", activeSession.getId(), e);
-                }
-            });
+            // TODO : Handle non-ping message
+            String receiverId = customMessage.getReceiver();
+            String userId = WebSocketHelper.getUserIdFromSessionAttribute(session);
+            log.info("got the payload {} and going to send to channel {}", payload, receiverId);
+            this.redisPublisher.publish(receiverId, userId + ":" + customMessage.getContent());
+
         }
     }
 
@@ -80,8 +93,8 @@ public class CustomWebSocketHandler implements WebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) throws Exception {
-        activeSessions.remove(session);
-        log.info("Connection closed: {}", session.getId());
+        webSocketSessionManager.removeWebSocketSession(session);
+        log.info("Connection closed: {} with uid: {}", session.getId(), extractUidFromUri(session.getUri().toString()));
     }
 
     @Override
