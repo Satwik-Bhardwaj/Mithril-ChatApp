@@ -2,17 +2,14 @@ package com.mithril.chatapp.chatservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mithril.chatapp.chatservice.dto.Message;
-import com.mithril.chatapp.chatservice.dto.WebSocketSessionInfo;
-import com.mithril.chatapp.chatservice.redis.Publisher;
-import com.mithril.chatapp.chatservice.redis.Subscriber;
+import com.mithril.chatapp.chatservice.redis.RedisChannelManager;
+import com.mithril.chatapp.chatservice.redis.RedisMessagePublisher;
+import com.mithril.chatapp.chatservice.redis.RedisMessageSubscriber;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -20,26 +17,26 @@ import java.util.concurrent.ScheduledExecutorService;
 @Component
 public class CustomWebSocketHandler implements WebSocketHandler {
 
-    @Autowired
-    private WebSocketSessionManager webSocketSessionManager;
+    private final WebSocketSessionManager webSocketSessionManager;
+
+    private final RedisMessagePublisher redisRedisMessagePublisher;
+
+    private final RedisMessageSubscriber redisMessageSubscriber;
 
     @Autowired
-    private Publisher redisPublisher;
-
-    @Autowired
-    private Subscriber redisSubscriber;
+    private RedisChannelManager redisChannelManager;
 
     // To map the JSON object to a Java object
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // To schedule a task to check for inactive sessions
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+//    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-    public CustomWebSocketHandler(WebSocketSessionManager webSocketSessionManager, Publisher redisPublisher, Subscriber redisSubscriber) {
+    public CustomWebSocketHandler(WebSocketSessionManager webSocketSessionManager, RedisMessagePublisher redisRedisMessagePublisher, RedisMessageSubscriber redisMessageSubscriber) {
         // Initialize the WebSocketSessionManager, Publisher, and Subscriber
         this.webSocketSessionManager = webSocketSessionManager;
-        this.redisPublisher = redisPublisher;
-        this.redisSubscriber = redisSubscriber;
+        this.redisRedisMessagePublisher = redisRedisMessagePublisher;
+        this.redisMessageSubscriber = redisMessageSubscriber;
 
 
         // Schedule a task to check for inactive sessions every 10 seconds
@@ -56,11 +53,16 @@ public class CustomWebSocketHandler implements WebSocketHandler {
 //                }
 //        }, 0, 10000, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+
+        // adding websocket session to session manager to manage the session
         this.webSocketSessionManager.addWebSocketSession(session);
+
+        // subscribing to the Redis channel for the user
         String userId = WebSocketHelper.getUserIdFromSessionAttribute(session);
-        this.redisSubscriber.subscribe(userId);
+        this.redisChannelManager.subscribeUserChannel(userId);
 
 //        String uid = extractUidFromUri(Objects.requireNonNull(session.getUri()).toString());
 //        activeSessions.put(session.getId(), new WebSocketSessionInfo(session, System.currentTimeMillis()));
@@ -81,7 +83,7 @@ public class CustomWebSocketHandler implements WebSocketHandler {
             String receiverId = customMessage.getReceiver();
             String userId = WebSocketHelper.getUserIdFromSessionAttribute(session);
             log.info("got the payload {} and going to send to channel {}", payload, receiverId);
-            this.redisPublisher.publish(receiverId, userId + ":" + customMessage.getContent());
+            this.redisRedisMessagePublisher.publish(receiverId, userId + ":" + customMessage.getContent());
 
         }
     }

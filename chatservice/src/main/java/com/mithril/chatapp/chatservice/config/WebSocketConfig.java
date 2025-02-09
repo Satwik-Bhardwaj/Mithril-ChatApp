@@ -1,7 +1,7 @@
 package com.mithril.chatapp.chatservice.config;
 
-import com.mithril.chatapp.chatservice.redis.Publisher;
-import com.mithril.chatapp.chatservice.redis.Subscriber;
+import com.mithril.chatapp.chatservice.redis.RedisMessagePublisher;
+import com.mithril.chatapp.chatservice.redis.RedisMessageSubscriber;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,14 +19,14 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private WebSocketSessionManager webSocketSessionManager;
 
     @Autowired
-    private Publisher redisPublisher;
+    private RedisMessagePublisher redisRedisMessagePublisher;
 
     @Autowired
-    private Subscriber redisSubscriber;
+    private RedisMessageSubscriber redisSubscriber;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(new CustomWebSocketHandler(this.webSocketSessionManager, this.redisPublisher, this.redisSubscriber), "/chat-ws/*")
+        registry.addHandler(new CustomWebSocketHandler(this.webSocketSessionManager, this.redisRedisMessagePublisher, this.redisSubscriber), "/chat-ws/*")
                 .addInterceptors(getParametersInterceptor())
                 .setAllowedOrigins("*");
     }

@@ -1,27 +1,24 @@
 package com.mithril.chatapp.chatservice.config;
 
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
-import org.springframework.beans.factory.annotation.Value;
+zimport com.mithril.chatapp.chatservice.redis.RedisMessageSubscriber;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
 
 @Configuration
 public class RedisConfig {
 
-    @Value("${spring.redis.host}")
-    private String redisHost;
-
-    @Value("${spring.redis.port}")
-    private int redisPort;
-
     @Bean
-    public RedisClient redisClient() {
-        return RedisClient.create("redis://" + redisHost + ":" + redisPort);
+    public RedisMessageListenerContainer redisMessageListenerContainer (RedisConnectionFactory connectionFactory, MessageListenerAdapter listenerAdapter) {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        return container;
     }
 
     @Bean
-    public StatefulRedisPubSubConnection<String, String> redisPubSubConnection(RedisClient redisClient) {
-        return redisClient.connectPubSub();
+    public MessageListenerAdapter listenerAdapter(RedisMessageSubscriber subscriber) {
+        return new MessageListenerAdapter(subscriber, "onMessage");
     }
 }
